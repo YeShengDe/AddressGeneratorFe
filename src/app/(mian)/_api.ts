@@ -1,6 +1,6 @@
 import { HttpClient } from '@/lib/request';
 import { IUser } from './_type';
-import { getLocalfromCountryCode } from '@/lib/utils';
+import { getGeoAcceptLanguage } from '@/lib/utils';
 
 // 第三方 API 客户端
 const geoClient = new HttpClient({
@@ -9,7 +9,7 @@ const geoClient = new HttpClient({
 });
 
 const adapterLocalFromCnCode = (countryCode: string) => {
-  return getLocalfromCountryCode(countryCode) || 'en';
+  return getGeoAcceptLanguage(countryCode) || 'en';
 };
 
 export const getCoorAddress = (params: IUser.getCoorAddressRequest) => {

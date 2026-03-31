@@ -1,6 +1,8 @@
 'use client';
 import {
   CalendarDays,
+  Cake,
+  Mars,
   MapPin,
   Mail,
   Lock,
@@ -8,6 +10,8 @@ import {
   Shuffle,
   History,
   Share,
+  User,
+  Venus,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Avatar } from '@/components/ui/avatar';
@@ -23,20 +27,38 @@ import { MapAlert } from './map-tips';
 import { saveAs } from 'file-saver';
 import { toBlob } from 'html-to-image';
 import ShareUserDialog from './share-user';
+import type { RandomCoordinateTarget } from '@/lib/utils';
 import {
   formatAddressPrimaryLine,
-  formatBirthdayWithAge,
+  getBirthdayDisplay,
+  getGenderDisplay,
   formatPersonName,
   getAddressMetaItems,
   getAvatarDownloadName,
 } from '@/lib/user-profile';
 
 interface UserGeneratorProps {
-  onGenerateAddress: (countryCode?: string) => Promise<void> | void;
+  onGenerateAddress: (
+    target?: string | RandomCoordinateTarget
+  ) => Promise<void> | void;
+  disabled?: boolean;
+}
+
+function HoverHint({ text }: { text: string }) {
+  return (
+    <div className="pointer-events-none absolute bottom-full left-1/2 z-[1010] mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-[11px] text-white opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 md:block">
+      {text}
+      <span
+        aria-hidden="true"
+        className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-gray-900/90"
+      />
+    </div>
+  );
 }
 
 export default function UserGenerator({
   onGenerateAddress,
+  disabled = false,
 }: UserGeneratorProps) {
   const { user: userInfo, loadingAddress, setHistoryDrawerOpen } = useStore();
   // 生成新地址
@@ -48,11 +70,17 @@ export default function UserGenerator({
   const addressMetaItems = userInfo
     ? getAddressMetaItems(userInfo.address)
     : [];
-  const formattedBirthday = userInfo
-    ? formatBirthdayWithAge(userInfo.birthday)
-    : '';
+  const birthdayDisplay = userInfo
+    ? getBirthdayDisplay(userInfo.birthday)
+    : { date: '', age: '' };
+  const genderDisplay = userInfo
+    ? getGenderDisplay(userInfo.gender)
+    : { label: '', kind: 'unknown' as const };
 
   const handleGenerateNewAddress = () => {
+    if (disabled) {
+      return;
+    }
     void onGenerateAddress();
   };
 
@@ -60,6 +88,13 @@ export default function UserGenerator({
   const handleOpenHistory = () => {
     setHistoryDrawerOpen(true);
   };
+
+  const GenderIcon =
+    genderDisplay.kind === 'male'
+      ? Mars
+      : genderDisplay.kind === 'female'
+        ? Venus
+        : User;
 
   // 复制到剪贴板
   const copyToClipboard = async (
@@ -129,37 +164,83 @@ export default function UserGenerator({
             {/* 头部个人信息 */}
             <div className="flex items-center gap-3 pb-2 border-b border-gray-200 dark:border-gray-700">
               <div className="flex-1">
-                <div
-                  className="text-lg font-bold text-gray-900 dark:text-gray-100 cursor-pointer "
+                <button
+                  type="button"
+                  className="group relative block cursor-pointer force-pointer bg-transparent p-0 text-left text-lg font-bold text-gray-900 dark:text-gray-100"
                   onClick={() => copyToClipboard(formattedName, '姓名')}
                   title="点击复制姓名"
                 >
+                  <HoverHint text="点击复制姓名" />
                   <span className="underline-hover">{formattedName}</span>
-                </div>
+                </button>
                 <div className="flex items-center gap-2 dark:text-gray-400">
                   <CalendarDays className="w-4 h-4 text-gray-400" />
-                  <span
-                    className="cursor-pointer transition-colors underline-hover"
-                    onClick={() =>
-                      copyToClipboard(userInfo?.birthday || '', '生日')
-                    }
-                    title="点击复制生日"
-                  >
-                    {formattedBirthday}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="group relative cursor-pointer force-pointer bg-transparent p-0 text-inherit transition-colors"
+                      onClick={() =>
+                        copyToClipboard(birthdayDisplay.date, '出生日期')
+                      }
+                      title="点击复制出生日期"
+                    >
+                      <HoverHint text="点击复制出生日期" />
+                      <span className="underline-hover">
+                        {birthdayDisplay.date}
+                      </span>
+                    </button>
+                    <span aria-hidden="true" className="text-gray-400">
+                      &middot;
+                    </span>
+                    <button
+                      type="button"
+                      className="group relative inline-flex cursor-pointer force-pointer items-center gap-1 bg-transparent p-0 text-inherit transition-colors"
+                      onClick={() =>
+                        copyToClipboard(birthdayDisplay.age, '年龄')
+                      }
+                      title="点击复制年龄"
+                    >
+                      <HoverHint text="点击复制年龄" />
+                      <Cake className="h-3.5 w-3.5 text-gray-400" />
+                      <span className="underline-hover">
+                        {birthdayDisplay.age}
+                      </span>
+                    </button>
+                    <span aria-hidden="true" className="text-gray-400">
+                      &middot;
+                    </span>
+                    <button
+                      type="button"
+                      className="group relative inline-flex cursor-pointer force-pointer items-center gap-1 bg-transparent p-0 text-inherit transition-colors hover:text-gray-500 dark:hover:text-gray-300"
+                      onClick={() =>
+                        copyToClipboard(genderDisplay.label, '性别')
+                      }
+                      title={`点击复制性别: ${genderDisplay.label}`}
+                      aria-label={`性别 ${genderDisplay.label}`}
+                    >
+                      <HoverHint text="点击复制性别" />
+                      <GenderIcon className="h-3.5 w-3.5" />
+                      <span className="underline-hover">
+                        {genderDisplay.label}
+                      </span>
+                    </button>
+                  </div>
                 </div>
-                <div
+                <button
+                  type="button"
                   onClick={() => copyToClipboard(userInfo?.phone, '电话号码')}
-                  className="flex items-center gap-2 dark:text-gray-400"
+                  className="group relative flex cursor-pointer force-pointer items-center gap-2 bg-transparent p-0 text-left dark:text-gray-400"
+                  title="点击复制电话号码"
                 >
+                  <HoverHint text="点击复制电话号码" />
                   <Phone className="w-4 h-4 text-gray-400" />
                   <span className="underline-hover">{userInfo?.phone}</span>
-                </div>
+                </button>
               </div>
               <Avatar
                 id={avatarId}
                 onClick={handleDownloadAvatar}
-                className="w-[80px] h-[80px] border-border  shadow-md cursor-pointer hover:opacity-80 transition-opacity rounded-[20%]"
+                className="w-[80px] h-[80px] border-border shadow-md cursor-pointer force-pointer hover:opacity-80 transition-opacity rounded-[20%]"
               >
                 <NiceAvatar
                   className="w-full h-full"
@@ -171,25 +252,29 @@ export default function UserGenerator({
 
             {/* 联系信息 */}
             <div className="space-y-1 ">
-              <div
-                className="flex items-center gap-2 rounded cursor-pointer transition-colors"
+              <button
+                type="button"
+                className="group relative flex w-full items-center gap-2 rounded bg-transparent p-0 text-left cursor-pointer force-pointer transition-colors"
                 onClick={() => copyToClipboard(userInfo?.email, '邮箱地址')}
                 title="点击复制邮箱"
               >
+                <HoverHint text="点击复制邮箱" />
                 <Mail className="w-4 h-4 text-gray-400" />
                 <span className="underline-hover break-all">
                   {userInfo?.email}
                 </span>
-              </div>
+              </button>
 
-              <div
-                className="flex items-center gap-2 cursor-pointer transition-colors"
+              <button
+                type="button"
+                className="group relative flex w-full items-center gap-2 bg-transparent p-0 text-left cursor-pointer force-pointer transition-colors"
                 onClick={() => copyToClipboard(userInfo?.password, '邮箱密码')}
                 title="点击复制邮箱密码"
               >
+                <HoverHint text="点击复制密码" />
                 <Lock className="w-4 h-4 text-gray-400" />
                 <span className="underline-hover">{userInfo?.password}</span>
-              </div>
+              </button>
             </div>
 
             {/* 地址信息 */}
@@ -203,10 +288,11 @@ export default function UserGenerator({
                   </div>
                 }
               >
-                <div className="flex items-start gap-2 rounded  dark:hover:bg-gray-800 cursor-pointer transition-colors">
+                <div className="flex items-start gap-2 rounded transition-colors dark:hover:bg-gray-800">
                   <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <span
+                    <button
+                      type="button"
                       onClick={() =>
                         copyToClipboard(
                           userInfo?.display_name || formattedAddressLine,
@@ -214,23 +300,25 @@ export default function UserGenerator({
                         )
                       }
                       title="点击复制完整地址"
-                      className="underline-hover break-all"
+                      className="group relative block w-full cursor-pointer force-pointer bg-transparent p-0 text-left underline-hover break-all"
                     >
+                      <HoverHint text="点击复制完整地址" />
                       {formattedAddressLine}
-                    </span>
+                    </button>
                     <div className="text-xs text-gray-500 mt-1 flex gap-2 flex-wrap">
                       {addressMetaItems.map((item) => (
                         <button
                           key={item.key}
                           type="button"
-                          className="bg-transparent p-0 text-left transition-colors"
+                          className="group relative cursor-pointer force-pointer bg-transparent p-0 text-left transition-colors"
                           onClick={() =>
                             copyToClipboard(item.value, item.label)
                           }
                           title={`点击复制${item.label}`}
                         >
-                          <span className="underline-hover">{item.label}:</span>
-                          <span>{item.value}</span>
+                          <HoverHint text={`点击复制${item.label}`} />
+                          <span>{item.label}:</span>
+                          <span className="underline-hover">{item.value}</span>
                         </button>
                       ))}
                     </div>
@@ -255,6 +343,7 @@ export default function UserGenerator({
           variant="outline"
           className="flex-[4]"
           onClick={handleOpenHistory}
+          disabled={disabled}
         >
           <History className="h-3 w-3 mr-1" />
           历史记录
@@ -263,6 +352,7 @@ export default function UserGenerator({
           variant="default"
           className="flex-[6] border-[rgba(255,255,255,.1)] border-solid border"
           onClick={handleGenerateNewAddress}
+          disabled={disabled}
         >
           <Shuffle className="h-3 w-3 ml-1" />
           生成新地址

@@ -1,5 +1,6 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   MapContainer,
   TileLayer,
@@ -14,9 +15,19 @@ import UserGenerator from './user-generator';
 import { layerOptions } from './map-layer-control';
 // 修复 Leaflet 默认图标问题
 import L from 'leaflet';
+import { LoaderCircle } from 'lucide-react';
 import { useStore } from '../_store';
-import { getPerson, getRandomCoor } from '@/lib/utils';
+import {
+  getPerson,
+  getRandomCoor,
+  type RandomCoordinateTarget,
+} from '@/lib/utils';
 import { getPopulationBoundsByCountry } from '@/lib/population';
+import {
+  generateValidatedRandomAddress,
+  hydrateUserWithReverseGeocode,
+  type RandomAddressGenerationProgress,
+} from '../_lib/random-address';
 
 const DefaultIcon = L.divIcon({
   html: '<div style="font-size: 30px;">📍</div>',
@@ -64,7 +75,11 @@ export default function MapComponent({
     layerOptions[0]
   );
   const [isGeneratingFlight, setIsGeneratingFlight] = useState(false);
+  const [isGeneratingAddress, setIsGeneratingAddress] = useState(false);
+  const [generationProgress, setGenerationProgress] =
+    useState<RandomAddressGenerationProgress | null>(null);
 
+  const queryClient = useQueryClient();
   const mapRef = useRef<L.Map | null>(null);
   const animationSequenceRef = useRef(0);
   const randomGenerationSequenceRef = useRef(0);
@@ -137,20 +152,41 @@ export default function MapComponent({
   );
 
   const handleGenerateAddress = useCallback(
-    async (preferredCountryCode?: string) => {
+    async (target?: string | RandomCoordinateTarget) => {
+      if (isGeneratingAddress) {
+        return;
+      }
+
       const generationSequence = randomGenerationSequenceRef.current + 1;
       randomGenerationSequenceRef.current = generationSequence;
+      setIsGeneratingAddress(true);
+      setGenerationProgress(null);
       setLoadingAddress(true);
 
       try {
-        const generated = getRandomCoor(preferredCountryCode, 0.2);
+        const generated = await generateValidatedRandomAddress(
+          queryClient,
+          target,
+          (progress) => {
+            if (randomGenerationSequenceRef.current !== generationSequence) {
+              return;
+            }
+
+            setGenerationProgress(progress);
+          }
+        );
 
         if (randomGenerationSequenceRef.current !== generationSequence) {
           return;
         }
 
         const nextCountryCode = generated.country_code;
-        const nextUser = getPerson(nextCountryCode);
+        const nextUser = generated.reverse
+          ? hydrateUserWithReverseGeocode(
+              getPerson(nextCountryCode),
+              generated.reverse
+            )
+          : getPerson(nextCountryCode);
 
         if (mapRef.current) {
           skipNextCoordSyncRef.current = true;
@@ -165,7 +201,7 @@ export default function MapComponent({
           return;
         }
 
-        const fallback = getRandomCoor(preferredCountryCode, 0.2);
+        const fallback = getRandomCoor(target, 0.2);
         const fallbackCountryCode = fallback.country_code;
 
         if (mapRef.current) {
@@ -178,12 +214,16 @@ export default function MapComponent({
         animateGeneratedAddress(fallback.coord, fallbackCountryCode);
       } finally {
         if (randomGenerationSequenceRef.current === generationSequence) {
+          setGenerationProgress(null);
+          setIsGeneratingAddress(false);
           setLoadingAddress(false);
         }
       }
     },
     [
       animateGeneratedAddress,
+      isGeneratingAddress,
+      queryClient,
       setCoord,
       setCountryCode,
       setLoadingAddress,
@@ -280,6 +320,7 @@ export default function MapComponent({
       <MapSearch
         onLocationSelect={handleLocationSelect}
         onGenerateAddress={handleGenerateAddress}
+        disabled={isGeneratingAddress}
       />
 
       <MapContainer
@@ -380,7 +421,26 @@ export default function MapComponent({
         <span dangerouslySetInnerHTML={{ __html: attributionHtml }} />
       </div>
       {/* 用户信息生成器 */}
-      <UserGenerator onGenerateAddress={handleGenerateAddress} />
+      <UserGenerator
+        onGenerateAddress={handleGenerateAddress}
+        disabled={isGeneratingAddress}
+      />
+
+      {isGeneratingAddress && (
+        <div className="pointer-events-auto absolute inset-0 z-[1001] flex items-center justify-center bg-black/72 p-4 text-white backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="text-2xl font-bold leading-tight sm:text-3xl md:text-5xl">
+              一个野生的地址生成器
+            </div>
+            <LoaderCircle className="h-8 w-8 animate-spin text-white/80" />
+            <div className="text-sm text-white/75 md:text-base">
+              {generationProgress
+                ? `正在寻找可用住宅地址... 第 ${generationProgress.attempt}/${generationProgress.totalAttempts} 次尝试`
+                : '正在寻找可用住宅地址...'}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

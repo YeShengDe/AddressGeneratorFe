@@ -2,13 +2,14 @@ import type { QueryClient } from '@tanstack/react-query';
 import { getCoorAddress } from '../_api';
 import type { IUser } from '../_type';
 import { normalizeReverseGeocodeAddress } from '@/lib/user-profile';
-import { getRandomCoor } from '@/lib/utils';
+import { getRandomCoor, type RandomCoordinateTarget } from '@/lib/utils';
 
 const RANDOM_COORDINATE_RADIUS_SCALES = [0.2, 0.35, 0.55, 0.8];
 const ATTEMPTS_PER_RADIUS_SCALE = 2;
 const MIN_STREET_LEVEL_PLACE_RANK = 26;
 const MAX_REVERSE_MATCH_DISTANCE_METERS = 350;
 const MAX_COORD_SNAP_DISTANCE_METERS = 1800;
+const REQUEST_SPACING_MS = 350;
 
 export const REVERSE_GEOCODE_STALE_TIME = 60 * 1000;
 
@@ -97,8 +98,22 @@ export interface RandomAddressGenerationResult {
   reverse: IUser.getCoorAddressResponse | null;
 }
 
-export function getReverseQueryKey(coord: [number, number]) {
-  return ['getCoorAddress', coord] as const;
+export interface RandomAddressGenerationProgress {
+  attempt: number;
+  totalAttempts: number;
+  radiusScale: number;
+  countryCode?: string;
+}
+
+export function getReverseQueryKey(
+  coord: [number, number],
+  countryCode?: string
+) {
+  return ['getCoorAddress', coord[0], coord[1], countryCode ?? ''] as const;
+}
+
+function getTargetCountryCode(target?: string | RandomCoordinateTarget) {
+  return typeof target === 'string' ? target : target?.countryCode;
 }
 
 function normalizeCountryCode(countryCode?: string) {
@@ -107,6 +122,10 @@ function normalizeCountryCode(countryCode?: string) {
 
 function toRadians(value: number) {
   return (value * Math.PI) / 180;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getDistanceMeters(start: [number, number], end: [number, number]) {
@@ -215,17 +234,29 @@ export function hydrateUserWithReverseGeocode(
 
 export async function generateValidatedRandomAddress(
   queryClient: QueryClient,
-  preferredCountryCode?: string
+  target?: string | RandomCoordinateTarget,
+  onProgress?: (progress: RandomAddressGenerationProgress) => void
 ): Promise<RandomAddressGenerationResult> {
   let lastError: unknown = null;
+  const totalAttempts =
+    RANDOM_COORDINATE_RADIUS_SCALES.length * ATTEMPTS_PER_RADIUS_SCALE;
+  let currentAttempt = 0;
+  const targetCountryCode = getTargetCountryCode(target);
 
   for (const radiusScale of RANDOM_COORDINATE_RADIUS_SCALES) {
     for (let attempt = 0; attempt < ATTEMPTS_PER_RADIUS_SCALE; attempt += 1) {
-      const candidate = getRandomCoor(preferredCountryCode, radiusScale);
+      currentAttempt += 1;
+      onProgress?.({
+        attempt: currentAttempt,
+        totalAttempts,
+        radiusScale,
+        countryCode: targetCountryCode,
+      });
+      const candidate = getRandomCoor(target, radiusScale);
 
       try {
         const response = await queryClient.fetchQuery({
-          queryKey: getReverseQueryKey(candidate.coord),
+          queryKey: getReverseQueryKey(candidate.coord, candidate.country_code),
           queryFn: () =>
             getCoorAddress({
               lat: candidate.coord[0],
@@ -233,6 +264,7 @@ export async function generateValidatedRandomAddress(
               'accept-language': candidate.country_code,
             }),
           staleTime: REVERSE_GEOCODE_STALE_TIME,
+          retry: false,
         });
         const resolvedCoord = resolveValidatedCoord(
           candidate.coord,
@@ -248,7 +280,10 @@ export async function generateValidatedRandomAddress(
           resolvedCoord[0] !== candidate.coord[0] ||
           resolvedCoord[1] !== candidate.coord[1]
         ) {
-          queryClient.setQueryData(getReverseQueryKey(resolvedCoord), response);
+          queryClient.setQueryData(
+            getReverseQueryKey(resolvedCoord, candidate.country_code),
+            response
+          );
         }
 
         return {
@@ -258,6 +293,10 @@ export async function generateValidatedRandomAddress(
         };
       } catch (error) {
         lastError = error;
+      }
+
+      if (currentAttempt < totalAttempts) {
+        await sleep(REQUEST_SPACING_MS);
       }
     }
   }
@@ -270,7 +309,7 @@ export async function generateValidatedRandomAddress(
     throw new Error('随机地址校验失败');
   }
 
-  const fallback = getRandomCoor(preferredCountryCode, 0.2);
+  const fallback = getRandomCoor(target, 0.2);
   return {
     coord: fallback.coord,
     country_code: fallback.country_code,

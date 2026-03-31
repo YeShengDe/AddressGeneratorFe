@@ -173,4 +173,8 @@
     background-size: 100% 1px;
     background-position: left bottom;
   }
+
+  .force-pointer {
+    cursor: pointer !important;
+  }
 }

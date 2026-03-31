@@ -56,6 +56,7 @@ import {
 } from '@faker-js/faker';
 import { IUser } from '@/app/(mian)/_type';
 import { getCountryLocale, getRandomPopulationCenter } from './population';
+import { generateLocalizedSurname } from './localized-name';
 import {
   generateMemorableStrongPassword,
   generatePreferredEmail,
@@ -135,6 +136,20 @@ export function getLocalfromCountryCode(countryCode: string): string {
   return getCountryLocale(countryCode);
 }
 
+export function getGeoAcceptLanguage(countryCode: string): string {
+  const code = countryCode.trim().toUpperCase();
+  const locale = getCountryLocale(code);
+  const geoLocaleMap: Record<string, string> = {
+    CN: 'zh-CN',
+    HK: 'zh-HK',
+    TW: 'zh-TW',
+    JP: 'ja',
+    KR: 'ko',
+  };
+
+  return geoLocaleMap[code] ?? locale.replace('_', '-');
+}
+
 /**
  * 根据地区码获取对应的Faker实例
  * @param countryCode 地区码（如：zh_CN, en_US等）
@@ -149,8 +164,24 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function getRandomCoor(countryCode?: string, radiusScale = 1) {
-  const center = getRandomPopulationCenter(countryCode);
+export interface RandomCoordinateTarget {
+  countryCode: string;
+  origin: [number, number];
+  radius: number;
+}
+
+export function getRandomCoor(
+  target?: string | RandomCoordinateTarget,
+  radiusScale = 1
+) {
+  const center =
+    typeof target === 'string' || !target
+      ? getRandomPopulationCenter(target)
+      : {
+          origin: target.origin,
+          radius: target.radius,
+          countryCode: target.countryCode,
+        };
   const coordinates = faker.location.nearbyGPSCoordinate({
     isMetric: true,
     origin: center.origin,
@@ -162,18 +193,50 @@ export function getRandomCoor(countryCode?: string, radiusScale = 1) {
   };
 }
 
+function getNameFaker(countryCode: string): Faker {
+  switch (countryCode.trim().toUpperCase()) {
+    case 'CN':
+      return fakerZH_CN;
+    case 'TW':
+    case 'HK':
+      return fakerZH_TW;
+    case 'JP':
+      return fakerJA;
+    case 'KR':
+      return fakerKO;
+    default:
+      return getLocaleFaker(countryCode);
+  }
+}
+
 export function getPerson(country_code: string): IUser.asObject {
   const localFaker = getLocaleFaker(country_code);
+  const nameFaker = getNameFaker(country_code);
+  const gender = withFakerFallback(
+    () => localFaker.person.sexType(),
+    () => fakerEN_US.person.sexType(),
+    'male'
+  );
   const firstname = withFakerFallback(
-    () => localFaker.person.firstName(),
-    () => fakerEN_US.person.firstName(),
-    'Alex'
+    () => nameFaker.person.firstName(gender),
+    () => localFaker.person.firstName(gender),
+    withFakerFallback(
+      () => fakerEN_US.person.firstName(gender),
+      () => fakerEN_US.person.firstName(),
+      'Alex'
+    )
   );
-  const lastname = withFakerFallback(
-    () => localFaker.person.lastName(),
-    () => fakerEN_US.person.lastName(),
-    'Taylor'
-  );
+  const lastname =
+    generateLocalizedSurname(nameFaker, country_code) ??
+    withFakerFallback(
+      () => nameFaker.person.lastName(gender),
+      () => localFaker.person.lastName(gender),
+      withFakerFallback(
+        () => fakerEN_US.person.lastName(gender),
+        () => fakerEN_US.person.lastName(),
+        'Taylor'
+      )
+    );
   const birthday = withFakerFallback(
     () =>
       localFaker.date
@@ -201,11 +264,6 @@ export function getPerson(country_code: string): IUser.asObject {
     () => localFaker.location.zipCode(),
     () => fakerEN_US.location.zipCode(),
     '10001'
-  );
-  const gender = withFakerFallback(
-    () => localFaker.person.gender(),
-    () => fakerEN_US.person.gender(),
-    'unknown'
   );
   const avatar = withFakerFallback(
     () => localFaker.image.avatarGitHub(),

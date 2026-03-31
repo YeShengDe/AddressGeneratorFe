@@ -17,25 +17,12 @@ export interface PopulationCountry {
 
 const FEATURED_COUNTRY_CONFIG: Partial<Record<string, FeaturedCountryConfig>> =
   {
-    US: { label: '🇺🇸美国', order: 1 },
-    CA: { label: '🇨🇦加拿大', order: 2 },
-    HK: { label: '🇭🇰香港', order: 3 },
-    JP: { label: '🇯🇵日本', order: 4 },
-    SG: { label: '🇸🇬新加坡', order: 5 },
+    US: { label: '美国', order: 1 },
+    CA: { label: '加拿大', order: 2 },
+    HK: { label: '香港', order: 3 },
+    JP: { label: '日本', order: 4 },
+    // SG: { label: '新加坡', order: 5 },
   };
-
-function toFlagEmoji(countryCode: string) {
-  if (!/^[A-Z]{2}$/.test(countryCode)) {
-    return '';
-  }
-
-  return String.fromCodePoint(
-    ...countryCode
-      .toUpperCase()
-      .split('')
-      .map((char) => 127397 + char.charCodeAt(0))
-  );
-}
 
 const populationCentersByCountry = new Map<string, PopulationCenter[]>();
 const populationCountryMap = new Map<string, PopulationCountry>();
@@ -58,8 +45,7 @@ for (const center of populationCenters) {
   }
 
   const featuredConfig = FEATURED_COUNTRY_CONFIG[code];
-  const flagEmoji = toFlagEmoji(code);
-  const fallbackLabel = [flagEmoji, center.country].filter(Boolean).join(' ');
+  const fallbackLabel = center.country;
 
   populationCountryMap.set(code, {
     code,

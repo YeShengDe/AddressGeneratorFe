@@ -101,7 +101,7 @@ export default function MapLayerControl({
 
   return (
     <div
-      className="absolute top-[70px] md:top-auto md:bottom-[50px] right-4 z-[1000] flex flex-col gap-2 items-end"
+      className="absolute top-[120px] xs:top-[70px] md:top-auto md:bottom-[50px] right-4 z-[1000] flex flex-col gap-2 items-end"
       data-map-control
     >
       {/* 缩放控制器 */}

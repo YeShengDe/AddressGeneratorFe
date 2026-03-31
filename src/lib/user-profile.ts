@@ -157,6 +157,37 @@ function sanitizeEmailLocalPart(value: string) {
     .replace(/^[._-]+|[._-]+$/g, '');
 }
 
+function normalizeLocalizedAddressValue(
+  value: string | undefined,
+  countryCode?: string
+) {
+  const trimmed = value?.replace(/\s+/g, ' ').trim() ?? '';
+
+  if (!trimmed) {
+    return '';
+  }
+
+  const normalizedCountryCode = normalizeCountryCode(countryCode);
+
+  if (
+    normalizedCountryCode !== 'HK' ||
+    !containsEastAsianScript(trimmed) ||
+    !/[A-Za-z]/.test(trimmed)
+  ) {
+    return trimmed;
+  }
+
+  const cleaned = trimmed
+    .replace(/\b[A-Za-z][A-Za-z\s.'&/-]*\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*(,|，|·|\.)\s*/g, '')
+    .replace(/\s+(?=[\u3400-\u9fff\uf900-\ufaff])/g, '')
+    .replace(/(?<=[\u3400-\u9fff\uf900-\ufaff])\s+/g, '')
+    .trim();
+
+  return cleaned || trimmed;
+}
+
 function trimOrPadDigits(value: string, length: number) {
   if (value.length >= length) {
     return value.slice(-length);
@@ -217,7 +248,10 @@ function isEastAsianName(
 
 function buildStreetLine(address: Address) {
   const countryCode = normalizeCountryCode(address.country_code);
-  const streetName = address.streetName?.trim() || address.street?.trim();
+  const streetName = normalizeLocalizedAddressValue(
+    address.streetName?.trim() || address.street?.trim(),
+    countryCode
+  );
   const rawBuildingNumber = address.buildingNumber?.trim();
   const buildingNumber =
     countryCode === 'CN' &&
@@ -385,6 +419,15 @@ export function formatAddressPrimaryLine(address: Address) {
     );
   }
 
+  if (countryCode === 'HK') {
+    const hkParts = uniqueParts([
+      address.city === '香港' ? undefined : address.city,
+      address.district,
+    ]);
+
+    return `${hkParts.join('')}${streetLine}`;
+  }
+
   const eastAsianParts = uniqueParts([
     address.country,
     address.state,
@@ -414,17 +457,26 @@ export function getAddressMetaItems(address: Address): AddressMetaItem[] {
     {
       key: 'state',
       label: config.stateLabel,
-      value: address.state?.trim() ?? '',
+      value: normalizeLocalizedAddressValue(
+        address.state?.trim(),
+        address.country_code
+      ),
     },
     {
       key: 'city',
       label: config.cityLabel,
-      value: address.city?.trim() ?? '',
+      value: normalizeLocalizedAddressValue(
+        address.city?.trim(),
+        address.country_code
+      ),
     },
     {
       key: 'district',
       label: config.districtLabel,
-      value: address.district?.trim() ?? '',
+      value: normalizeLocalizedAddressValue(
+        address.district?.trim(),
+        address.country_code
+      ),
     },
     {
       key: 'zipcode',
@@ -529,32 +581,95 @@ export function normalizeReverseGeocodeAddress(
     fallbackAddress.buildingNumber
   );
 
-  return {
-    street: streetName,
+  state = normalizeLocalizedAddressValue(state, countryCode);
+  city = normalizeLocalizedAddressValue(city, countryCode);
+  district = normalizeLocalizedAddressValue(district, countryCode);
+  const normalizedStreetName = normalizeLocalizedAddressValue(
     streetName,
+    countryCode
+  );
+  const normalizedCountry =
+    countryCode === 'HK'
+      ? '香港'
+      : normalizeLocalizedAddressValue(
+          pickFirst(osmAddress.country, fallbackAddress.country),
+          countryCode
+        );
+
+  return {
+    street: normalizedStreetName,
+    streetName: normalizedStreetName,
     buildingNumber,
     city,
     district,
     state,
     zipcode: pickFirst(osmAddress.postcode, fallbackAddress.zipcode),
-    country: pickFirst(osmAddress.country, fallbackAddress.country),
+    country: normalizedCountry,
     country_code: countryCode || fallbackAddress.country_code,
   };
 }
 
-export function formatBirthdayWithAge(value?: string) {
+export function getBirthdayDisplay(value?: string) {
   if (!value) {
-    return '';
+    return {
+      date: '',
+      age: '',
+    };
   }
 
   const date = parseISO(value);
 
   if (!isValid(date)) {
-    return value;
+    return {
+      date: value,
+      age: '',
+    };
   }
 
-  const age = differenceInYears(new Date(), date);
-  return `${format(date, 'yyyy-MM-dd')} (${age}岁)`;
+  return {
+    date: format(date, 'yyyy-MM-dd'),
+    age: String(differenceInYears(new Date(), date)),
+  };
+}
+
+export function getGenderDisplay(value?: string) {
+  const normalized = value?.trim().toLowerCase() ?? '';
+
+  if (
+    normalized === 'male' ||
+    normalized === 'man' ||
+    normalized === 'm' ||
+    normalized === '男'
+  ) {
+    return {
+      label: '男',
+      kind: 'male' as const,
+    };
+  }
+
+  if (
+    normalized === 'female' ||
+    normalized === 'woman' ||
+    normalized === 'f' ||
+    normalized === '女'
+  ) {
+    return {
+      label: '女',
+      kind: 'female' as const,
+    };
+  }
+
+  if (!normalized || normalized === 'unknown') {
+    return {
+      label: '其他',
+      kind: 'unknown' as const,
+    };
+  }
+
+  return {
+    label: '其他',
+    kind: 'other' as const,
+  };
 }
 
 export function getAvatarDownloadName(
