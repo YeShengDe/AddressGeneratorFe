@@ -24,3 +24,6 @@ push-tag: push-version
 # 创建并推送标签
 dev: 
 	npm run dev
+
+deploy:
+	npx wrangler deploy
