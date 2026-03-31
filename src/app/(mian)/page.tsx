@@ -4,16 +4,15 @@ import { useEffect } from 'react';
 import Show from '@/components/show';
 import dynamic from 'next/dynamic';
 import { getPerson, getRandomCoor } from '@/lib/utils';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { getCoorAddress } from './_api';
 import LogoPage from '@/components/logo-page';
 import { useShare } from '@/hooks/use-share';
 import { useRouter } from 'next/navigation';
-import {
-  generateValidatedRandomAddress,
-  hydrateUserWithReverseGeocode,
-  REVERSE_GEOCODE_STALE_TIME,
-} from './_lib/random-address';
+import { hydrateUserWithReverseGeocode } from './_lib/random-address';
+import { useDebounce } from '@/hooks/use-debounce';
+
+const REVERSE_GEOCODE_STALE_TIME = 5 * 60 * 1000;
 
 // 动态导入 MapComponent，禁用 SSR
 const MapComponent = dynamic(() => import('./_components/map-component'), {
@@ -33,7 +32,7 @@ export default function Page() {
   } = useStore(); // 获取全局状态管理的 setUser 方法
   const shareData = useShare();
   const router = useRouter();
-  const queryClient = useQueryClient();
+  const debouncedCoord = useDebounce(coord, 600);
 
   useEffect(() => {
     let isMounted = true;
@@ -52,7 +51,7 @@ export default function Page() {
       setLoadingAddress(true);
 
       try {
-        const generated = await generateValidatedRandomAddress(queryClient);
+        const generated = getRandomCoor(undefined, 0.2);
 
         if (!isMounted) {
           return;
@@ -60,13 +59,7 @@ export default function Page() {
 
         setCoord(generated.coord);
         setCountryCode(generated.country_code);
-        const nextUser = generated.reverse
-          ? hydrateUserWithReverseGeocode(
-              getPerson(generated.country_code),
-              generated.reverse
-            )
-          : getPerson(generated.country_code);
-        setUser(nextUser);
+        setUser(getPerson(generated.country_code));
       } catch {
         if (!isMounted) {
           return;
@@ -88,26 +81,26 @@ export default function Page() {
     return () => {
       isMounted = false;
     };
-  }, [
-    queryClient,
-    router,
-    setCoord,
-    setCountryCode,
-    setLoadingAddress,
-    setUser,
-    shareData,
-  ]);
+  }, [router, setCoord, setCountryCode, setLoadingAddress, setUser, shareData]);
 
   const { isLoading, isError, data } = useQuery({
-    queryKey: ['getCoorAddress', coord],
-    enabled: !(coord[0] === 0 && coord[1] === 0),
+    queryKey: [
+      'getCoorAddress',
+      debouncedCoord[0],
+      debouncedCoord[1],
+      country_code,
+    ],
+    enabled: !(debouncedCoord[0] === 0 && debouncedCoord[1] === 0),
     queryFn: () =>
       getCoorAddress({
-        lat: coord[0],
-        lon: coord[1],
+        lat: debouncedCoord[0],
+        lon: debouncedCoord[1],
         'accept-language': country_code ?? '',
       }),
     staleTime: REVERSE_GEOCODE_STALE_TIME,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   useEffect(() => {
     setLoadingAddress(isLoading);

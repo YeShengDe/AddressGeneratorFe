@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
-import { Info, Mail, Trash2, RotateCcw, X } from 'lucide-react';
+import { Mail, Trash2, RotateCcw, X } from 'lucide-react';
 import { toast } from 'sonner';
 import NiceAvatar, { genConfig } from 'react-nice-avatar';
 import Show from '@/components/show';

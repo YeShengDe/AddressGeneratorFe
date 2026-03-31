@@ -290,8 +290,9 @@ export function generatePreferredEmail(
     .filter(Boolean)
     .filter((value) => value.length >= 4 && value.length <= 18);
   const localPart =
-    localFaker.helpers.arrayElement(variants) ||
-    `user${localFaker.string.numeric(4)}`;
+    variants.length > 0
+      ? localFaker.helpers.arrayElement(variants)
+      : `user${localFaker.string.numeric(4)}`;
   const domain = localFaker.helpers.arrayElement(EMAIL_DOMAINS);
 
   return `${localPart}@${domain}`;
@@ -317,7 +318,14 @@ export function generateReadablePhoneNumber(
 ) {
   const normalizedCountryCode = normalizeCountryCode(countryCode);
   const config = PHONE_FORMATS[normalizedCountryCode];
-  const rawPhone = localFaker.phone.number({ style: 'international' });
+  let rawPhone = '';
+
+  try {
+    rawPhone = localFaker.phone.number({ style: 'international' });
+  } catch {
+    rawPhone = `${config ? `+${config.dialCode} ` : '+'}${faker.string.numeric(10)}`;
+  }
+
   const digits = rawPhone.replace(/\D/g, '');
 
   if (!config) {

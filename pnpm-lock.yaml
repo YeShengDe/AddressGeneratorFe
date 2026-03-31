@@ -53,6 +53,9 @@ importers:
       html-to-image:
         specifier: ^1.11.13
         version: 1.11.13
+      leaflet:
+        specifier: 1.9.4
+        version: 1.9.4
       lucide-react:
         specifier: 0.522.0
         version: 0.522.0(react@19.2.4)

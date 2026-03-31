@@ -1,6 +1,5 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   MapContainer,
   TileLayer,
@@ -18,10 +17,6 @@ import L from 'leaflet';
 import { useStore } from '../_store';
 import { getPerson, getRandomCoor } from '@/lib/utils';
 import { getPopulationBoundsByCountry } from '@/lib/population';
-import {
-  generateValidatedRandomAddress,
-  hydrateUserWithReverseGeocode,
-} from '../_lib/random-address';
 
 const DefaultIcon = L.divIcon({
   html: '<div style="font-size: 30px;">📍</div>',
@@ -70,7 +65,6 @@ export default function MapComponent({
   );
   const [isGeneratingFlight, setIsGeneratingFlight] = useState(false);
 
-  const queryClient = useQueryClient();
   const mapRef = useRef<L.Map | null>(null);
   const animationSequenceRef = useRef(0);
   const randomGenerationSequenceRef = useRef(0);
@@ -149,22 +143,14 @@ export default function MapComponent({
       setLoadingAddress(true);
 
       try {
-        const generated = await generateValidatedRandomAddress(
-          queryClient,
-          preferredCountryCode
-        );
+        const generated = getRandomCoor(preferredCountryCode, 0.2);
 
         if (randomGenerationSequenceRef.current !== generationSequence) {
           return;
         }
 
         const nextCountryCode = generated.country_code;
-        const nextUser = generated.reverse
-          ? hydrateUserWithReverseGeocode(
-              getPerson(nextCountryCode),
-              generated.reverse
-            )
-          : getPerson(nextCountryCode);
+        const nextUser = getPerson(nextCountryCode);
 
         if (mapRef.current) {
           skipNextCoordSyncRef.current = true;
@@ -198,7 +184,6 @@ export default function MapComponent({
     },
     [
       animateGeneratedAddress,
-      queryClient,
       setCoord,
       setCountryCode,
       setLoadingAddress,

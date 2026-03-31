@@ -115,6 +115,22 @@ const localeMap: Record<string, Faker> = {
   zh_TW: fakerZH_TW,
 };
 
+function withFakerFallback<T>(
+  primary: () => T,
+  fallback: () => T,
+  finalValue: T
+): T {
+  try {
+    return primary();
+  } catch {
+    try {
+      return fallback();
+    } catch {
+      return finalValue;
+    }
+  }
+}
+
 export function getLocalfromCountryCode(countryCode: string): string {
   return getCountryLocale(countryCode);
 }
@@ -148,12 +164,54 @@ export function getRandomCoor(countryCode?: string, radiusScale = 1) {
 
 export function getPerson(country_code: string): IUser.asObject {
   const localFaker = getLocaleFaker(country_code);
-  const firstname = localFaker.person.firstName();
-  const lastname = localFaker.person.lastName();
-  const birthday = localFaker.date
-    .birthdate({ min: 18, max: 28, mode: 'age' })
-    .toISOString()
-    .split('T')[0];
+  const firstname = withFakerFallback(
+    () => localFaker.person.firstName(),
+    () => fakerEN_US.person.firstName(),
+    'Alex'
+  );
+  const lastname = withFakerFallback(
+    () => localFaker.person.lastName(),
+    () => fakerEN_US.person.lastName(),
+    'Taylor'
+  );
+  const birthday = withFakerFallback(
+    () =>
+      localFaker.date
+        .birthdate({ min: 18, max: 28, mode: 'age' })
+        .toISOString()
+        .split('T')[0],
+    () =>
+      fakerEN_US.date
+        .birthdate({ min: 18, max: 28, mode: 'age' })
+        .toISOString()
+        .split('T')[0],
+    '2000-01-01'
+  );
+  const street = withFakerFallback(
+    () => localFaker.location.street(),
+    () => fakerEN_US.location.street(),
+    'Main Street'
+  );
+  const buildingNumber = withFakerFallback(
+    () => localFaker.location.buildingNumber(),
+    () => fakerEN_US.location.buildingNumber(),
+    '100'
+  );
+  const zipcode = withFakerFallback(
+    () => localFaker.location.zipCode(),
+    () => fakerEN_US.location.zipCode(),
+    '10001'
+  );
+  const gender = withFakerFallback(
+    () => localFaker.person.gender(),
+    () => fakerEN_US.person.gender(),
+    'unknown'
+  );
+  const avatar = withFakerFallback(
+    () => localFaker.image.avatarGitHub(),
+    () => fakerEN_US.image.avatarGitHub(),
+    ''
+  );
 
   return {
     // idcard:localFaker.person.
@@ -162,18 +220,18 @@ export function getPerson(country_code: string): IUser.asObject {
     email: generatePreferredEmail(localFaker, firstname, lastname, birthday),
     phone: generateReadablePhoneNumber(localFaker, country_code),
     birthday,
-    gender: localFaker.person.gender(),
-    avatar: localFaker.image.avatarGitHub(),
+    gender,
+    avatar,
     password: generateMemorableStrongPassword(),
     display_name: '',
     generatedAt: new Date().toISOString(),
     address: {
-      street: localFaker.location.street(),
-      streetName: localFaker.location.street(),
-      buildingNumber: localFaker.location.buildingNumber(),
+      street,
+      streetName: street,
+      buildingNumber,
       city: '',
       district: '',
-      zipcode: localFaker.location.zipCode(),
+      zipcode,
       country: '',
       country_code: country_code,
       latitude: 0,
