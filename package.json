@@ -25,14 +25,15 @@
     "name": "i<i@github.com>"
   },
   "license": "./LICENSE",
-  "version": "25.0626.1942",
+  "version": "26.0331.1612",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
-    "prepare": "husky"
+    "prepare": "husky",
+    "deploy": "next build && npx wrangler deploy "
   },
   "lint-staged": {
     "**/*.{js,jsx,ts,tsx,json,css,scss,md}": [

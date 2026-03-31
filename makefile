@@ -25,5 +25,5 @@ push-tag: push-version
 dev: 
 	npm run dev
 
-deploy:
-	npx wrangler deploy
+deploy: update-version
+	npm run deploy
