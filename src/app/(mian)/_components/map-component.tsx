@@ -1,5 +1,6 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   MapContainer,
   TileLayer,
@@ -15,7 +16,12 @@ import { layerOptions } from './map-layer-control';
 // 修复 Leaflet 默认图标问题
 import L from 'leaflet';
 import { useStore } from '../_store';
-import { getPerson } from '@/lib/utils';
+import { getPerson, getRandomCoor } from '@/lib/utils';
+import { getPopulationBoundsByCountry } from '@/lib/population';
+import {
+  generateValidatedRandomAddress,
+  hydrateUserWithReverseGeocode,
+} from '../_lib/random-address';
 
 const DefaultIcon = L.divIcon({
   html: '<div style="font-size: 30px;">📍</div>',
@@ -26,6 +32,14 @@ const DefaultIcon = L.divIcon({
 });
 
 L.Marker.prototype.options.icon = DefaultIcon;
+
+const ADDRESS_FOCUS_ZOOM = 17;
+const COUNTRY_OVERVIEW_ZOOM_MAX = 5;
+const COUNTRY_OVERVIEW_DURATION = 1.25;
+const ADDRESS_FOCUS_DURATION = 1.45;
+const TILE_KEEP_BUFFER = 8;
+const STREET_LAYER =
+  layerOptions.find((layer) => layer.id === 'street') ?? layerOptions[0];
 
 interface LayerOption {
   id: string;
@@ -43,17 +57,170 @@ export default function MapComponent({
   lat?: number;
   lon?: number;
 }) {
-  const { user, country_code, setCoord, setUser } = useStore();
+  const {
+    user,
+    country_code,
+    setCoord,
+    setCountryCode,
+    setLoadingAddress,
+    setUser,
+  } = useStore();
   const [currentLayer, setCurrentLayer] = useState<LayerOption>(
     layerOptions[0]
   );
+  const [isGeneratingFlight, setIsGeneratingFlight] = useState(false);
 
+  const queryClient = useQueryClient();
   const mapRef = useRef<L.Map | null>(null);
+  const animationSequenceRef = useRef(0);
+  const randomGenerationSequenceRef = useRef(0);
+  const skipNextCoordSyncRef = useRef(false);
+
+  const clearPendingAnimation = useCallback(() => {
+    animationSequenceRef.current += 1;
+    setIsGeneratingFlight(false);
+    mapRef.current?.stop();
+  }, []);
+
+  const animateGeneratedAddress = useCallback(
+    (targetCoord: [number, number], nextCountryCode: string) => {
+      const map = mapRef.current;
+
+      if (!map) {
+        return;
+      }
+
+      clearPendingAnimation();
+      const animationSequence = animationSequenceRef.current;
+      setIsGeneratingFlight(true);
+
+      const overviewBounds = getPopulationBoundsByCountry(nextCountryCode);
+
+      if (overviewBounds) {
+        map.once('moveend', () => {
+          if (animationSequenceRef.current !== animationSequence) {
+            return;
+          }
+
+          map.once('moveend', () => {
+            if (animationSequenceRef.current !== animationSequence) {
+              return;
+            }
+
+            setIsGeneratingFlight(false);
+          });
+
+          map.flyTo(targetCoord, ADDRESS_FOCUS_ZOOM, {
+            animate: true,
+            duration: ADDRESS_FOCUS_DURATION,
+          });
+        });
+
+        map.flyToBounds(overviewBounds, {
+          animate: true,
+          duration: COUNTRY_OVERVIEW_DURATION,
+          maxZoom: COUNTRY_OVERVIEW_ZOOM_MAX,
+          padding: [56, 56],
+        });
+
+        return;
+      }
+
+      map.once('moveend', () => {
+        if (animationSequenceRef.current !== animationSequence) {
+          return;
+        }
+
+        setIsGeneratingFlight(false);
+      });
+
+      map.flyTo(targetCoord, ADDRESS_FOCUS_ZOOM, {
+        animate: true,
+        duration: ADDRESS_FOCUS_DURATION,
+      });
+    },
+    [clearPendingAnimation]
+  );
+
+  const handleGenerateAddress = useCallback(
+    async (preferredCountryCode?: string) => {
+      const generationSequence = randomGenerationSequenceRef.current + 1;
+      randomGenerationSequenceRef.current = generationSequence;
+      setLoadingAddress(true);
+
+      try {
+        const generated = await generateValidatedRandomAddress(
+          queryClient,
+          preferredCountryCode
+        );
+
+        if (randomGenerationSequenceRef.current !== generationSequence) {
+          return;
+        }
+
+        const nextCountryCode = generated.country_code;
+        const nextUser = generated.reverse
+          ? hydrateUserWithReverseGeocode(
+              getPerson(nextCountryCode),
+              generated.reverse
+            )
+          : getPerson(nextCountryCode);
+
+        if (mapRef.current) {
+          skipNextCoordSyncRef.current = true;
+        }
+
+        setCountryCode(nextCountryCode);
+        setCoord(generated.coord);
+        setUser(nextUser);
+        animateGeneratedAddress(generated.coord, nextCountryCode);
+      } catch {
+        if (randomGenerationSequenceRef.current !== generationSequence) {
+          return;
+        }
+
+        const fallback = getRandomCoor(preferredCountryCode, 0.2);
+        const fallbackCountryCode = fallback.country_code;
+
+        if (mapRef.current) {
+          skipNextCoordSyncRef.current = true;
+        }
+
+        setCountryCode(fallbackCountryCode);
+        setCoord(fallback.coord);
+        setUser(getPerson(fallbackCountryCode));
+        animateGeneratedAddress(fallback.coord, fallbackCountryCode);
+      } finally {
+        if (randomGenerationSequenceRef.current === generationSequence) {
+          setLoadingAddress(false);
+        }
+      }
+    },
+    [
+      animateGeneratedAddress,
+      queryClient,
+      setCoord,
+      setCountryCode,
+      setLoadingAddress,
+      setUser,
+    ]
+  );
+
+  useEffect(() => {
+    return () => {
+      clearPendingAnimation();
+    };
+  }, [clearPendingAnimation]);
 
   // 地理编码 - 根据坐标获取地址
   useEffect(() => {
     if (mapRef.current) {
-      mapRef.current.setView([lat ?? 0, lon ?? 0], 17, {
+      if (skipNextCoordSyncRef.current) {
+        skipNextCoordSyncRef.current = false;
+        return;
+      }
+
+      mapRef.current.setView([lat ?? 0, lon ?? 0], ADDRESS_FOCUS_ZOOM, {
         animate: true,
         duration: 1.0,
       });
@@ -64,12 +231,20 @@ export default function MapComponent({
     setCurrentLayer(layer);
   };
 
+  const showAnimationPreviewLayer =
+    isGeneratingFlight && currentLayer.id !== STREET_LAYER.id;
+  const attributionHtml = showAnimationPreviewLayer
+    ? `${STREET_LAYER.attribution} | ${currentLayer.attribution}`
+    : currentLayer.attribution;
+
   // 处理搜索位置选择
   const handleLocationSelect = (lat: number, lng: number) => {
+    clearPendingAnimation();
     setCoord([lat, lng]); // 更新全局坐标状态
     // 移动地图中心到新位置，带动画效果
     if (mapRef.current) {
-      mapRef.current.setView([lat, lng], 17, {
+      mapRef.current.stop();
+      mapRef.current.setView([lat, lng], ADDRESS_FOCUS_ZOOM, {
         animate: true,
         duration: 1.0,
       });
@@ -97,11 +272,13 @@ export default function MapComponent({
         }
 
         const { lat, lng } = e.latlng;
+        clearPendingAnimation();
         setCoord([lat, lng]); // 更新全局坐标状态
         const newUser = getPerson(country_code);
         setUser(newUser);
         // 自动移动地图使标记点居中
         if (mapRef.current) {
+          mapRef.current.stop();
           mapRef.current.setView([lat, lng], mapRef.current.getZoom(), {
             animate: true,
             duration: 0.5,
@@ -115,7 +292,10 @@ export default function MapComponent({
   return (
     <div className="relative h-full w-full">
       {/* 地点搜索组件 */}
-      <MapSearch onLocationSelect={handleLocationSelect} />
+      <MapSearch
+        onLocationSelect={handleLocationSelect}
+        onGenerateAddress={handleGenerateAddress}
+      />
 
       <MapContainer
         center={[lat ?? 0, lon ?? 0]} // 使用传入的经纬度或默认值
@@ -130,18 +310,33 @@ export default function MapComponent({
         {/* 地图点击事件处理器 */}
         <MapClickHandler />
 
+        {showAnimationPreviewLayer && (
+          <TileLayer
+            key="street-animation-preview"
+            attribution={STREET_LAYER.attribution}
+            url={STREET_LAYER.url}
+            keepBuffer={TILE_KEEP_BUFFER}
+            updateWhenIdle={false}
+          />
+        )}
+
         <TileLayer
-          key={`${currentLayer.id}-${Date.now()}`} // 添加 key 确保图层正确切换
+          key={currentLayer.id}
           attribution={currentLayer.attribution}
           url={currentLayer.url}
+          keepBuffer={TILE_KEEP_BUFFER}
+          opacity={showAnimationPreviewLayer ? 0.45 : 1}
+          updateWhenIdle={false}
         />
 
         {/* 如果有标注层，则添加标注层 */}
         {currentLayer.hasLabels && currentLayer.labelsUrl && (
           <TileLayer
-            key={`${currentLayer.id}-labels-${Date.now()}`}
+            key={`${currentLayer.id}-labels`}
             url={currentLayer.labelsUrl}
             attribution=""
+            keepBuffer={TILE_KEEP_BUFFER}
+            updateWhenIdle={false}
           />
         )}
 
@@ -197,10 +392,10 @@ export default function MapComponent({
 
       {/* 自定义属性信息 */}
       <div className="absolute bottom-1 left-1 text-xs text-gray-500 dark:text-gray-400 bg-white/80 dark:bg-gray-900/80 px-2 py-1 rounded backdrop-blur-sm">
-        <span dangerouslySetInnerHTML={{ __html: currentLayer.attribution }} />
+        <span dangerouslySetInnerHTML={{ __html: attributionHtml }} />
       </div>
       {/* 用户信息生成器 */}
-      <UserGenerator />
+      <UserGenerator onGenerateAddress={handleGenerateAddress} />
     </div>
   );
 }

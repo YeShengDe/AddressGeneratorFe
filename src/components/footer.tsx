@@ -24,12 +24,12 @@ function Footer() {
         <span className="underline-hover">Github</span>
       </a>
       <a
-        href="http://yesheng.de"
+        href="https://onenav.twaliray.com/store"
         target="_blank"
         className=" mr-1"
         rel="noopener noreferrer"
       >
-        <span className="underline-hover">野生的恐龙</span>
+        <span className="underline-hover">Onenav</span>
       </a>
       <div className=" h-full flex justify-center items-center ">
         © 2023 - {dayjs().format('YYYY')} {hostname} All rights reserved.

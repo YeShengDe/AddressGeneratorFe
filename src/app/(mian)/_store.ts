@@ -10,7 +10,9 @@ interface StoreState {
   country_code: string; // 可选属性，可能用于存储国家代码
   loadingAddress: boolean; // 是否正在加载地址信息
   hideMapTips: boolean; // 是否显示提示信息
+  hideHistoryTip: boolean;
   setHideMapTips: (show: boolean) => void;
+  setHideHistoryTip: (hide: boolean) => void;
   setCountryCode: (code: string) => void;
   setCoord: (coord: [number, number]) => void;
   setUser: (user: IUser.asObject) => void;
@@ -18,6 +20,20 @@ interface StoreState {
   clearHistory: () => void;
   setHistoryDrawerOpen: (open: boolean) => void;
   setLoadingAddress: (loading: boolean) => void;
+}
+
+const HISTORY_LIMIT = 20;
+
+function getGeneratedAt(user: IUser.asObject) {
+  return user.generatedAt ?? new Date().toISOString();
+}
+
+function sortHistoryByGeneratedAt(users: IUser.asObject[]) {
+  return [...users].sort(
+    (left, right) =>
+      new Date(getGeneratedAt(right)).getTime() -
+      new Date(getGeneratedAt(left)).getTime()
+  );
 }
 
 export const useStore = create<StoreState>()(
@@ -30,25 +46,41 @@ export const useStore = create<StoreState>()(
       loadingAddress: false,
       isHistoryDrawerOpen: false,
       hideMapTips: false,
+      hideHistoryTip: false,
       setHideMapTips: (show: boolean) => set({ hideMapTips: show }),
+      setHideHistoryTip: (hide: boolean) => set({ hideHistoryTip: hide }),
       setLoadingAddress: (loading: boolean) => set({ loadingAddress: loading }),
       setCountryCode: (code: string) => set({ country_code: code }),
       setCoord: (coord: [number, number]) => set({ coord }),
       setUser: (user: IUser.asObject) => {
-        set({ user });
+        const normalizedUser = {
+          ...user,
+          generatedAt: getGeneratedAt(user),
+        };
+
+        set({ user: normalizedUser });
         // 添加到历史记录
-        get().addToHistory(user);
+        get().addToHistory(normalizedUser);
       },
       addToHistory: (user: IUser.asObject) => {
         const currentHistory = get().userHistory;
-        // 避免重复添加相同的用户（基于邮箱判断）
-        const isDuplicate = currentHistory.some(
+        const existingHistoryUser = currentHistory.find(
           (historyUser) => historyUser.email === user.email
         );
-        if (!isDuplicate) {
-          const newHistory = [user, ...currentHistory]; // 只保留最近20条记录
-          set({ userHistory: newHistory });
-        }
+        const normalizedUser = {
+          ...existingHistoryUser,
+          ...user,
+          generatedAt: existingHistoryUser?.generatedAt ?? getGeneratedAt(user),
+        };
+        const dedupedHistory = currentHistory.filter(
+          (historyUser) => historyUser.email !== normalizedUser.email
+        );
+        const newHistory = sortHistoryByGeneratedAt([
+          normalizedUser,
+          ...dedupedHistory,
+        ]).slice(0, HISTORY_LIMIT);
+
+        set({ userHistory: newHistory });
       },
       clearHistory: () => set({ userHistory: [] }),
       setHistoryDrawerOpen: (open: boolean) =>

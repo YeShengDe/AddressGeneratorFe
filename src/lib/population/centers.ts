@@ -1,4 +1,4 @@
-interface PopulationCenter {
+export interface PopulationCenter {
   origin: [number, number]; // [纬度, 经度]
   radius: number; // 半径，单位为公里
   locale: string; // Faker本地化代码

@@ -55,7 +55,12 @@ import {
   fakerZH_TW,
 } from '@faker-js/faker';
 import { IUser } from '@/app/(mian)/_type';
-import { populationCenters } from './population';
+import { getCountryLocale, getRandomPopulationCenter } from './population';
+import {
+  generateMemorableStrongPassword,
+  generatePreferredEmail,
+  generateReadablePhoneNumber,
+} from './user-profile';
 // 本地化 Faker 实例映射
 const localeMap: Record<string, Faker> = {
   af_ZA: fakerAF_ZA,
@@ -109,72 +114,9 @@ const localeMap: Record<string, Faker> = {
   zh_CN: fakerZH_CN,
   zh_TW: fakerZH_TW,
 };
-const countryToLocaleMap: Record<string, string> = {
-  // 中文系
-  CN: 'zh_CN',
-  TW: 'zh_TW',
-  HK: 'en_HK',
-
-  // 英语系
-  US: 'en_US',
-  GB: 'en_GB',
-  AU: 'en_AU',
-  CA: 'en_CA',
-  IE: 'en_IE',
-  IN: 'en_IN',
-  NG: 'en_NG',
-  ZA: 'en_ZA',
-  GH: 'en_GH',
-
-  // 欧洲
-  DE: 'de',
-  AT: 'de_AT',
-  CH: 'de_CH',
-  FR: 'fr',
-  BE: 'fr_BE',
-  NL: 'nl',
-  IT: 'it',
-  ES: 'es',
-  FI: 'fi',
-  NO: 'nb_NO',
-  SE: 'sv',
-  DK: 'da',
-  PL: 'pl',
-  CZ: 'cs_CZ',
-  SK: 'sk',
-  HU: 'hu',
-  RO: 'ro',
-  RU: 'ru',
-  UA: 'uk',
-  EL: 'el',
-
-  // 亚洲
-  JP: 'ja',
-  KR: 'ko',
-  TH: 'th',
-  VN: 'vi',
-  ID: 'id_ID',
-  IL: 'he',
-  TR: 'tr',
-  IR: 'fa',
-  AR: 'ar',
-
-  // 拉美
-  MX: 'es_MX',
-  BR: 'pt_BR',
-  PT: 'pt_PT',
-
-  // 非洲
-  EG: 'ar',
-
-  // 其他
-  AZ: 'az',
-  HR: 'hr',
-};
 
 export function getLocalfromCountryCode(countryCode: string): string {
-  const upperCode = countryCode.toUpperCase();
-  return countryToLocaleMap[upperCode] || 'en_US'; // 默认返回英语
+  return getCountryLocale(countryCode);
 }
 
 /**
@@ -191,15 +133,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function getRandomCoor(countryCode?: string) {
-  const countrys = populationCenters.filter((center) =>
-    countryCode ? center.countryCode === countryCode : true
-  );
-  const center = faker.helpers.arrayElement(countrys);
+export function getRandomCoor(countryCode?: string, radiusScale = 1) {
+  const center = getRandomPopulationCenter(countryCode);
   const coordinates = faker.location.nearbyGPSCoordinate({
     isMetric: true,
     origin: center.origin,
-    radius: center.radius,
+    radius: Math.max(center.radius * radiusScale, 0.5),
   });
   return {
     coord: coordinates,
@@ -207,51 +146,33 @@ export function getRandomCoor(countryCode?: string) {
   };
 }
 
-export function generateStrongPassword(length = 16): string {
-  const upper = faker.string.fromCharacters('ABCDEFGHIJKLMNOPQRSTUVWXYZ');
-  const lower = faker.string.fromCharacters('abcdefghijklmnopqrstuvwxyz');
-  const digit = faker.string.fromCharacters('0123456789');
-  const special = faker.string.fromCharacters('!@#$%^&*()_-+=');
-
-  const randomFrom = (chars: string, count: number) =>
-    Array.from({ length: count }, () =>
-      faker.string.fromCharacters(chars)
-    ).join('');
-
-  const required = upper + lower + digit + special;
-
-  const remainingLength = Math.max(length - 4, 4); // 保证最少长度为4
-  const allChars =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_-+=';
-  const rest = randomFrom(allChars, remainingLength);
-
-  const full = (required + rest).split('');
-  faker.helpers.shuffle(full);
-  return full.join('').slice(0, length); // 再截断到期望长度
-}
-
 export function getPerson(country_code: string): IUser.asObject {
   const localFaker = getLocaleFaker(country_code);
+  const firstname = localFaker.person.firstName();
+  const lastname = localFaker.person.lastName();
+  const birthday = localFaker.date
+    .birthdate({ min: 18, max: 28, mode: 'age' })
+    .toISOString()
+    .split('T')[0];
+
   return {
-    firstname: localFaker.person.firstName(),
-    lastname: localFaker.person.lastName(),
-    email: localFaker.internet.email(),
-    phone: localFaker.phone.number({ style: 'international' }),
-    birthday: localFaker.date
-      .birthdate({ min: 18, max: 28, mode: 'age' })
-      .toISOString()
-      .split('T')[0],
+    // idcard:localFaker.person.
+    firstname,
+    lastname,
+    email: generatePreferredEmail(localFaker, firstname, lastname, birthday),
+    phone: generateReadablePhoneNumber(localFaker, country_code),
+    birthday,
     gender: localFaker.person.gender(),
     avatar: localFaker.image.avatarGitHub(),
-    password: generateStrongPassword(
-      localFaker.number.int({ min: 15, max: 20 })
-    ),
-    display_name: `${localFaker.location.streetAddress()}`,
+    password: generateMemorableStrongPassword(),
+    display_name: '',
+    generatedAt: new Date().toISOString(),
     address: {
       street: localFaker.location.street(),
-      streetName: localFaker.location.streetAddress(),
+      streetName: localFaker.location.street(),
       buildingNumber: localFaker.location.buildingNumber(),
       city: '',
+      district: '',
       zipcode: localFaker.location.zipCode(),
       country: '',
       country_code: country_code,

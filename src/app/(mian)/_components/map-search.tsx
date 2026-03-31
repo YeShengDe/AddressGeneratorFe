@@ -4,6 +4,7 @@ import type React from 'react';
 import { useQuery } from '@tanstack/react-query'; // Import useQuery from react-query
 
 import { Search, MapPin, Loader2, X } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,13 +12,20 @@ import { getSearchAddress } from '../_api';
 import { useStore } from '../_store';
 import type { IUser } from '../_type';
 import { getPerson } from '@/lib/utils';
+import { featuredPopulationCountries } from '@/lib/population';
 import { useDebounce } from '@/hooks/use-debounce';
 
 interface MapSearchProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void;
+  onGenerateAddress: (countryCode?: string) => Promise<void> | void;
 }
 
-export default function MapSearch({ onLocationSelect }: MapSearchProps) {
+const HOT_REGIONS = featuredPopulationCountries;
+
+export default function MapSearch({
+  onLocationSelect,
+  onGenerateAddress,
+}: MapSearchProps) {
   const { setUser, country_code } = useStore();
   const [query, setQuery] = useState('');
   const [showResults, setShowResults] = useState(false);
@@ -119,6 +127,17 @@ export default function MapSearch({ onLocationSelect }: MapSearchProps) {
     inputRef.current?.focus();
   }, []);
 
+  const handleHotRegionSelect = useCallback(
+    (code: string) => {
+      void onGenerateAddress(code);
+      setQuery('');
+      setShowResults(false);
+      setSelectedIndex(-1);
+      inputRef.current?.blur();
+    },
+    [onGenerateAddress]
+  );
+
   // Keyboard navigation handler
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -166,7 +185,7 @@ export default function MapSearch({ onLocationSelect }: MapSearchProps) {
 
   return (
     <div
-      className="absolute top-4 left-4 z-[1000] md:max-w-[300px] w-[calc(100vw-2rem)]"
+      className="absolute top-4 left-1 z-[1000] w-[calc(100%-0.5rem)] md:left-4 md:max-w-[400px] md:min-w-[200px]"
       ref={searchRef}
       data-map-control
     >
@@ -258,6 +277,30 @@ export default function MapSearch({ onLocationSelect }: MapSearchProps) {
           )}
         </div>
       </Card>
+
+      <div className="mt-2 px-1">
+        <div className="flex flex-wrap items-center gap-2">
+          {HOT_REGIONS.map((item) => (
+            <div key={item.code} className="group relative inline-flex">
+              <div className="pointer-events-none absolute bottom-full left-1/2 z-[1010] mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-[11px] text-white opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 md:block">
+                点击快速生成该地区地址
+                <span
+                  aria-hidden="true"
+                  className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-gray-900/90"
+                />
+              </div>
+              <Badge
+                variant="secondary"
+                className="cursor-pointer bg-white/90 text-gray-700 shadow-sm backdrop-blur-sm hover:bg-white dark:bg-gray-900/90 dark:text-gray-200 dark:hover:bg-gray-900"
+                title={`点击生成${item.label}地址`}
+                onClick={() => handleHotRegionSelect(item.code)}
+              >
+                {item.label}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

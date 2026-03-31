@@ -1,5 +1,14 @@
 'use client';
-import { MapPin, Mail, Lock, Shuffle, History, Share } from 'lucide-react';
+import {
+  CalendarDays,
+  MapPin,
+  Mail,
+  Lock,
+  Phone,
+  Shuffle,
+  History,
+  Share,
+} from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Avatar } from '@/components/ui/avatar';
 import { toast } from 'sonner';
@@ -8,33 +17,43 @@ import NiceAvatar, { genConfig } from 'react-nice-avatar';
 import Show from '@/components/show';
 import { Button } from '@/components/ui/button';
 import HistoryDrawer from './history-drawer';
-import { getPerson, getRandomCoor } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { MapAlert } from './map-tips';
 import { saveAs } from 'file-saver';
 import { toBlob } from 'html-to-image';
 import ShareUserDialog from './share-user';
+import {
+  formatAddressPrimaryLine,
+  formatBirthdayWithAge,
+  formatPersonName,
+  getAddressMetaItems,
+  getAvatarDownloadName,
+} from '@/lib/user-profile';
 
-export default function UserGenerator() {
-  const {
-    user: userInfo,
-    loadingAddress,
-    setHistoryDrawerOpen,
-    setUser,
-    setCoord,
-    setCountryCode,
-  } = useStore();
+interface UserGeneratorProps {
+  onGenerateAddress: (countryCode?: string) => Promise<void> | void;
+}
+
+export default function UserGenerator({
+  onGenerateAddress,
+}: UserGeneratorProps) {
+  const { user: userInfo, loadingAddress, setHistoryDrawerOpen } = useStore();
   // 生成新地址
   const avatarId = 'yeshengde-user-avatar';
+  const formattedName = userInfo ? formatPersonName(userInfo) : '';
+  const formattedAddressLine = userInfo
+    ? formatAddressPrimaryLine(userInfo.address)
+    : '';
+  const addressMetaItems = userInfo
+    ? getAddressMetaItems(userInfo.address)
+    : [];
+  const formattedBirthday = userInfo
+    ? formatBirthdayWithAge(userInfo.birthday)
+    : '';
+
   const handleGenerateNewAddress = () => {
-    // const newUser = getPerson()
-    // setUser(newUser)
-    const { coord, country_code } = getRandomCoor();
-    setCoord(coord);
-    setCountryCode(country_code);
-    const newUser = getPerson(country_code ?? '');
-    setUser(newUser);
+    void onGenerateAddress();
   };
 
   // 打开历史记录
@@ -76,7 +95,25 @@ export default function UserGenerator() {
       },
       width: node.offsetWidth * scale,
     });
-    const name = `${userInfo?.firstname}_${userInfo?.lastname}_avatar.png`;
+    const name = `${getAvatarDownloadName(
+      userInfo ?? {
+        firstname: 'user',
+        lastname: 'avatar',
+        address: {
+          street: '',
+          streetName: '',
+          buildingNumber: '',
+          city: '',
+          district: '',
+          zipcode: '',
+          country: '',
+          country_code: 'US',
+          state: '',
+          latitude: 0,
+          longitude: 0,
+        },
+      }
+    )}_avatar.png`;
     if (blob) saveAs(blob, name);
     toast.dismiss(loadingToast);
     toast.success('头像已下载为 PNG', {
@@ -94,34 +131,28 @@ export default function UserGenerator() {
               <div className="flex-1">
                 <div
                   className="text-lg font-bold text-gray-900 dark:text-gray-100 cursor-pointer "
-                  onClick={() =>
-                    copyToClipboard(
-                      `${userInfo?.firstname} ${userInfo?.lastname}`,
-                      '姓名'
-                    )
-                  }
+                  onClick={() => copyToClipboard(formattedName, '姓名')}
                   title="点击复制姓名"
                 >
-                  <span className="underline-hover">
-                    {' '}
-                    {userInfo?.firstname} {userInfo?.lastname}
-                  </span>
+                  <span className="underline-hover">{formattedName}</span>
                 </div>
-                <div className="flex items-center gap-2   dark:text-gray-400">
+                <div className="flex items-center gap-2 dark:text-gray-400">
+                  <CalendarDays className="w-4 h-4 text-gray-400" />
                   <span
-                    className="cursor-pointer  transition-colors underline-hover"
+                    className="cursor-pointer transition-colors underline-hover"
                     onClick={() =>
                       copyToClipboard(userInfo?.birthday || '', '生日')
                     }
                     title="点击复制生日"
                   >
-                    {userInfo?.birthday}
+                    {formattedBirthday}
                   </span>
                 </div>
                 <div
                   onClick={() => copyToClipboard(userInfo?.phone, '电话号码')}
-                  className="flex items-center gap-2  dark:text-gray-400"
+                  className="flex items-center gap-2 dark:text-gray-400"
                 >
+                  <Phone className="w-4 h-4 text-gray-400" />
                   <span className="underline-hover">{userInfo?.phone}</span>
                 </div>
               </div>
@@ -141,16 +172,18 @@ export default function UserGenerator() {
             {/* 联系信息 */}
             <div className="space-y-1 ">
               <div
-                className="flex items-center gap-2 rounded   cursor-pointer transition-colors"
+                className="flex items-center gap-2 rounded cursor-pointer transition-colors"
                 onClick={() => copyToClipboard(userInfo?.email, '邮箱地址')}
                 title="点击复制邮箱"
               >
                 <Mail className="w-4 h-4 text-gray-400" />
-                <span className="underline-hover">{userInfo?.email}</span>
+                <span className="underline-hover break-all">
+                  {userInfo?.email}
+                </span>
               </div>
 
               <div
-                className="flex items-center gap-2   cursor-pointer transition-colors"
+                className="flex items-center gap-2 cursor-pointer transition-colors"
                 onClick={() => copyToClipboard(userInfo?.password, '邮箱密码')}
                 title="点击复制邮箱密码"
               >
@@ -175,50 +208,31 @@ export default function UserGenerator() {
                   <div className="flex-1 min-w-0">
                     <span
                       onClick={() =>
-                        copyToClipboard(userInfo?.display_name, '完整地址')
+                        copyToClipboard(
+                          userInfo?.display_name || formattedAddressLine,
+                          '完整地址'
+                        )
                       }
                       title="点击复制完整地址"
                       className="underline-hover break-all"
                     >
-                      {userInfo?.address.country},{userInfo?.address.state},
-                      {userInfo?.address.city},{userInfo?.address.streetName},
-                      {userInfo?.address.buildingNumber}
+                      {formattedAddressLine}
                     </span>
                     <div className="text-xs text-gray-500 mt-1 flex gap-2 flex-wrap">
-                      <Show when={!!userInfo?.address.city}>
-                        <span
-                          className="underline-hover"
+                      {addressMetaItems.map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          className="bg-transparent p-0 text-left transition-colors"
                           onClick={() =>
-                            copyToClipboard(userInfo?.address.state, '州/省')
+                            copyToClipboard(item.value, item.label)
                           }
+                          title={`点击复制${item.label}`}
                         >
-                          省/州:{userInfo?.address.state}
-                        </span>
-                      </Show>
-                      <Show when={!!userInfo?.address.city}>
-                        <span
-                          title="点击复制城市"
-                          className="underline-hover"
-                          onClick={() =>
-                            copyToClipboard(userInfo?.address.city, '城市')
-                          }
-                        >
-                          城市:{userInfo?.address.city}
-                        </span>
-                      </Show>
-                      <Show when={!!userInfo?.address.zipcode}>
-                        <span
-                          className="underline-hover"
-                          onClick={() =>
-                            copyToClipboard(
-                              userInfo?.address.zipcode,
-                              '邮政编码'
-                            )
-                          }
-                        >
-                          邮编:{userInfo?.address.zipcode}
-                        </span>
-                      </Show>
+                          <span className="underline-hover">{item.label}:</span>
+                          <span>{item.value}</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
                   <ShareUserDialog>
@@ -253,34 +267,6 @@ export default function UserGenerator() {
           <Shuffle className="h-3 w-3 ml-1" />
           生成新地址
         </Button>
-      </div>
-      <div>
-        {/* 热门快捷地区标签 */}
-
-        <div className="flex flex-wrap gap-2 my-2">
-          {[
-            { label: '🇺🇸美国', code: 'US' },
-            { label: '🇨🇦加拿大', code: 'CA' },
-            { label: '🇭🇰香港', code: 'HK' },
-            { label: '🇯🇵日本', code: 'JP' },
-            { label: '🇸🇬新加坡', code: 'SG' },
-          ].map((item) => (
-            <Badge
-              key={item.code}
-              variant="secondary"
-              className="cursor-pointer"
-              title={`点击生成${item.label}地址`}
-              onClick={() => {
-                setCountryCode(item.code);
-                const { coord } = getRandomCoor(item.code);
-                setCoord(coord);
-                setUser(getPerson(item.code));
-              }}
-            >
-              {item.label}
-            </Badge>
-          ))}
-        </div>
       </div>
       <MapAlert />
 

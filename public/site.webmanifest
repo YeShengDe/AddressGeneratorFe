@@ -1,6 +1,6 @@
 {
   "name": "一个野生的地址生成器",
-  "short_name": "野生的地址",
+  "short_name": "野生的地址生成器",
   "icons": [
     {
       "src": "/pwa-192x192.png",
@@ -30,5 +30,6 @@
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000",
-  "theme_color": "#000"
+  "theme_color": "#000",
+  "description": "基于google地图生成真实格式的测试地址数据，包含街道、城市、省州、邮编、电话等字段，适用于全球多个国家，开发测试必备。"
 }
